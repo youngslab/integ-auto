@@ -14,11 +14,50 @@ from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# alert
+from selenium.webdriver.common.alert import Alert
+
 # multi-dispatch
 from plum import dispatch  # mulitple dispatch
 from typing import Tuple, Union, List
 
+# pyautogui
+import pyautogui
+import pyperclip
+import autoit
+
+import time
+
+
 _default_timeout = 60
+
+
+class ImageElement:
+    def __init__(self, center):
+        self.center = center
+        pass
+
+
+def wait(func, *, timeout=_default_timeout, interval=0.5):
+    start = time.time()
+    curr = 0
+    retry = 0
+    while True:
+        curr = time.time() - start
+        retry = retry + 1
+        res = func()
+        if res != None and res != 0:
+            return res
+
+        if curr > timeout:
+            print(
+                f"Timeout! wait_until takes {curr}. timeout={timeout}, interval={interval}, retry={retry}")
+            break
+
+        # every 500ms
+        time.sleep(interval)
+
+    return res
 
 
 def get_clickable(driver: WebDriver, by: str, path: str, timeout: int = _default_timeout) -> Union[WebElement, None]:
@@ -29,12 +68,23 @@ def get_clickable(driver: WebDriver, by: str, path: str, timeout: int = _default
         return None
 
 
+@dispatch
 def get_element(driver: WebDriver, by: str, path: str, timeout: int = _default_timeout) -> Union[WebElement, None]:
     try:
         return WebDriverWait(driver, timeout).until(
             EC.presence_of_element_located((by, path)))
     except Exception as e:
         return None
+
+
+@dispatch
+def get_element(img: str, *, timeout: int = _default_timeout, grayscale: bool = True, confidence: float = .9) -> Union[ImageElement, None]:
+    def find_image(): return pyautogui.locateCenterOnScreen(
+        img, grayscale=grayscale, confidence=confidence)
+    center = wait(lambda: find_image(), timeout=timeout)
+    if not center:
+        return None
+    return ImageElement(center)
 
 
 def get_elements(driver: WebDriver, by: str, path: str, timeout: int = _default_timeout) -> List[WebElement]:
@@ -45,13 +95,39 @@ def get_elements(driver: WebDriver, by: str, path: str, timeout: int = _default_
         return []
 
 
+def get_alert(driver: WebDriver, timeout: int = _default_timeout):
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.alert_is_present(), "Can not find an alert window")
+        return driver.switch_to.alert
+    except Exception as e:
+        return None
+
+
+@dispatch
 def click(driver: WebDriver, element: WebElement):
+    if not driver or not element:
+        return False
     try:
         element.click()
     except:
         driver.execute_script("arguments[0].click();", element)
+    return True
 
 
+@dispatch
+def click(element: ImageElement):
+    if not element:
+        return False
+
+    if not element.center:
+        return False
+
+    pyautogui.click(element.center)
+    return True
+
+
+@dispatch
 def type(element: WebElement, text: str):
     element.clear()
     if element.get_attribute('value'):
@@ -60,10 +136,47 @@ def type(element: WebElement, text: str):
     return True
 
 
+def activate(title, *, timeout=30) -> bool:
+    window = f"[TITLE:{title}]"
+    try:
+        autoit.win_wait(window, timeout=timeout)
+    except Exception as e:
+        print(f"Failed to find a window. title={title}, e={e}")
+        return False
+
+    try:
+        autoit.win_activate(window, timeout=timeout)
+        return True
+    except Exception as e:
+        print.error(f"Failed to activate a window. title={title}, e={e}")
+        return False
+
+# @dispatch
+# def type(element: ImageElement, text: str):
+#     # Get Focused.
+#     click(element)
+#     pyperclip.copy(text)
+#     elem.send_keys(Keys.CONTROL, 'a')
+#     elem.send_keys(Keys.CONTROL, 'v')
+
+
 def select(element: WebElement, text: str):
     select = Select(element)
     select.select_by_visible_text(text)
     return True
+
+
+class AlertElement:
+    def __init__(self, alert: Alert):
+        self.alert = alert
+
+    def accept(self):        
+        self.alert.accept()
+        return True
+
+    def dismiss(self):
+        self.alert.dismiss()
+        return True
 
 
 class Frame:
@@ -101,6 +214,10 @@ class Automatic:
         return get_element(self.driver, by, path, timeout)
 
     @dispatch
+    def get_element(self, img: str, *, timeout: int = _default_timeout, grayscale: bool = True, confidence: float = .9) -> Union[ImageElement, None]:
+        return get_element(img, timeout=timeout, grayscale=grayscale, confidence=confidence)
+
+    @dispatch
     def get_elements(self, by: str, path: str, *, timeout: int = _default_timeout) -> List[WebElement]:
         return get_elements(self.driver, by, path, timeout)
 
@@ -110,16 +227,62 @@ class Automatic:
     def select(self, element: WebElement, text: str):
         return select(element, text)
 
+    # TYPE
+
     @dispatch
     def type(self, element: WebElement, text: str):
         return type(element, text)
+
+    @dispatch
+    def type(self, by: str, path: str, text: str):
+        elem = self.get_clickable(by, path)
+        if not elem:
+            return False
+        return type(elem, text)
+
+    # CLICK
 
     @dispatch
     def click(self, element: WebElement):
         return click(self.driver, element)
 
     @dispatch
+    def click(self, by: str, path: str):
+        elem = self.get_clickable(by, path)
+        if not elem:
+            print("Error element not found")
+            return False
+        return click(self.driver, elem)
+
+    @dispatch
+    def click(self, element: ImageElement):
+        return click(element)
+
+    @dispatch
+    def click(self, img: str):
+        elem = self.get_element(img)
+        if not elem:
+            return False
+        return click(elem)
+
+    @dispatch
     def get_frame(self, element: WebElement):
         if not element:
             return None
         return Frame(self.driver, element)
+
+    def get_alert(self):
+        a = get_alert(self.driver)
+        if not a:
+            return None
+        return AlertElement(a)
+
+
+    def accept_alert(self):
+        alert = self.get_alert()
+        if not alert:
+            return False
+        return alert.accept()
+
+    def activate(self, title: str):
+        return activate(title)
