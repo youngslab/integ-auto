@@ -28,6 +28,9 @@ import autoit
 
 import time
 
+# Support enum
+from enum import Enum
+
 
 _default_timeout = 60
 
@@ -151,32 +154,11 @@ def activate(title, *, timeout=30) -> bool:
         print.error(f"Failed to activate a window. title={title}, e={e}")
         return False
 
-# @dispatch
-# def type(element: ImageElement, text: str):
-#     # Get Focused.
-#     click(element)
-#     pyperclip.copy(text)
-#     elem.send_keys(Keys.CONTROL, 'a')
-#     elem.send_keys(Keys.CONTROL, 'v')
-
 
 def select(element: WebElement, text: str):
     select = Select(element)
     select.select_by_visible_text(text)
     return True
-
-
-class AlertElement:
-    def __init__(self, alert: Alert):
-        self.alert = alert
-
-    def accept(self):        
-        self.alert.accept()
-        return True
-
-    def dismiss(self):
-        self.alert.dismiss()
-        return True
 
 
 class Frame:
@@ -201,6 +183,18 @@ class Automatic:
             options.add_argument('disable-gpu')
         service = Service(EdgeChromiumDriverManager().install())
         return webdriver.Edge(options=options, service=service)
+
+    class DriverType(Enum):
+        Edge = 1
+        Chrome = 2
+
+    def create(t: DriverType, *, headless=False):
+        if t == Automatic.DriverType.Edge:
+            drv = Automatic.create_edge_driver(headless=headless)
+        else:
+            # TODO: Not implemented yet
+            raise Exception("Not implemented yet.")
+        return Automatic(drv)
 
     def __init__(self, driver: WebDriver, *, timeout=60):
         self.driver = driver
@@ -234,8 +228,8 @@ class Automatic:
         return type(element, text)
 
     @dispatch
-    def type(self, by: str, path: str, text: str):
-        elem = self.get_clickable(by, path)
+    def type(self, by: str, path: str, text: str, *, timeout=_default_timeout):
+        elem = self.get_clickable(by, path, timeout=timeout)
         if not elem:
             return False
         return type(elem, text)
@@ -247,8 +241,8 @@ class Automatic:
         return click(self.driver, element)
 
     @dispatch
-    def click(self, by: str, path: str):
-        elem = self.get_clickable(by, path)
+    def click(self, by: str, path: str, *, timeout=_default_timeout):
+        elem = self.get_clickable(by, path, timeout=timeout)
         if not elem:
             print("Error element not found")
             return False
@@ -271,18 +265,27 @@ class Automatic:
             return None
         return Frame(self.driver, element)
 
-    def get_alert(self):
-        a = get_alert(self.driver)
-        if not a:
-            return None
-        return AlertElement(a)
+    def get_alert(self, timeout=_default_timeout):
+        return get_alert(self.driver, timeout=timeout)
 
-
-    def accept_alert(self):
-        alert = self.get_alert()
+    def accept_alert(self, timeout=_default_timeout):
+        alert = self.get_alert(timeout=timeout)
         if not alert:
             return False
-        return alert.accept()
+        alert.accept()
+        return True
+
+    def accept_alert_with_text(self, expeted: str, timeout=_default_timeout):
+        alert = self.get_alert(timeout=timeout)
+        if not alert:
+            return False
+        if alert.text.find(expeted) < 0:
+            return False
+        alert.accept()
+        return True
 
     def activate(self, title: str):
         return activate(title)
+
+    def execute_script(self, script, *args):
+        return self.dirver.execute_script(script, *args)
