@@ -107,6 +107,18 @@ def get_alert(driver: WebDriver, timeout: int = _default_timeout):
         return None
 
 
+def get_window_handle(driver: WebDriver, title: str):
+    current = driver.current_window_handle
+    result = None
+    for handle in driver.window_handles:
+        driver.switch_to.window(handle)
+        if title == driver.title:
+            result = handle
+            break
+    driver.switch_to.window(current)
+    return result
+
+
 @dispatch
 def click(driver: WebDriver, element: WebElement):
     if not driver or not element:
@@ -171,6 +183,19 @@ class Frame:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.driver.switch_to.parent_frame()
+
+
+class Window:
+    def __init__(self, driver:WebDriver, handle):
+        self.driver = driver
+        self.prev_window_handle = driver.current_window_handle
+        self.next_window_handle = handle
+
+    def __enter__(self):
+        self.driver.switch_to.window(self.next_window_handle)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.driver.switch_to.window(self.prev_window_handle)
 
 
 class Automatic:
@@ -264,6 +289,15 @@ class Automatic:
         if not element:
             return None
         return Frame(self.driver, element)
+
+    # Window APIs
+    def get_window_handle(self, title:str, timeout=_default_timeout):
+        return wait(lambda: get_window_handle(self.driver, title), timeout=timeout)
+
+    def get_window(self, handle):
+        if not handle:
+            return None
+        return Window(self.driver, handle)
 
     def get_alert(self, timeout=_default_timeout):
         return get_alert(self.driver, timeout=timeout)
