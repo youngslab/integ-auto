@@ -110,9 +110,11 @@ def get_alert(driver: WebDriver, timeout: int = _default_timeout):
 def get_window_handle(driver: WebDriver, title: str):
     current = driver.current_window_handle
     result = None
-    for handle in driver.window_handles:
+    handles = driver.window_handles
+    handles.remove(current)
+    for handle in handles:
         driver.switch_to.window(handle)
-        if title == driver.title:
+        if driver.title.find(title) >= 0:
             result = handle
             break
     driver.switch_to.window(current)
@@ -186,7 +188,7 @@ class Frame:
 
 
 class Window:
-    def __init__(self, driver:WebDriver, handle):
+    def __init__(self, driver: WebDriver, handle):
         self.driver = driver
         self.prev_window_handle = driver.current_window_handle
         self.next_window_handle = handle
@@ -291,18 +293,20 @@ class Automatic:
         return Frame(self.driver, element)
 
     # Window APIs
-    def get_window_handle(self, title:str, timeout=_default_timeout):
+    def get_window_handle(self, title: str, timeout=_default_timeout):
         return wait(lambda: get_window_handle(self.driver, title), timeout=timeout)
 
-    def get_window(self, handle):
+    @dispatch
+    def get_window(self, handle: str):
         if not handle:
             return None
         return Window(self.driver, handle)
 
     def get_alert(self, timeout=_default_timeout):
+
         return get_alert(self.driver, timeout=timeout)
 
-    def accept_alert(self, timeout=_default_timeout):
+    def accept_alert(self, *, timeout=_default_timeout):
         alert = self.get_alert(timeout=timeout)
         if not alert:
             return False
@@ -322,4 +326,4 @@ class Automatic:
         return activate(title)
 
     def execute_script(self, script, *args):
-        return self.dirver.execute_script(script, *args)
+        return self.driver.execute_script(script, *args)
